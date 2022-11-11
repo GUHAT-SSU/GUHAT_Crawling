@@ -1,0 +1,30 @@
+{
+    "name": "classcrawaler",
+    "version": "1.0.0",
+    "description": "",
+    "main": "index.js",
+    "scripts": {
+        "test": "echo \"Error: no test specified\" && exit 1",
+        "start": "nodemon index.js",
+        "open": "opener http://localhost:3000/"
+    },
+    "author": "",
+    "license": "ISC",
+    "dependencies": {
+        "axios": "^1.1.3",
+        "body-parser": "^1.20.1",
+        "cheerio": "^1.0.0-rc.12",
+        "cors": "^2.8.5",
+        "express": "^4.18.2",
+        "node": "^19.0.1",
+        "nodemon": "^2.0.20",
+        "puppeteer": "^19.2.2"
+    },
+    "nodemonConfig": {
+        "ignore": [
+            "lectures.json",
+            "electives.json",
+            "./db/*"
+        ]
+    }
+}
