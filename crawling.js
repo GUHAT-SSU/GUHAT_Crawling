@@ -45,8 +45,8 @@ const usaintLogin = async (req, res) => {
     // const id = req.body.userId;
     // const pw = req.body.password;
 
-    const id = "20201725";
-    const pw = "kimhyomin667~";
+    const id = "id";
+    const pw = "pw";
 
     try {
         const page = await browser.newPage();
@@ -494,7 +494,7 @@ const classSelector = async (html, year, semester, univ, major, detail) => {
         }
     });
     datas.add(classes);
-    console.log(classes);
+
     return classes;
 };
 

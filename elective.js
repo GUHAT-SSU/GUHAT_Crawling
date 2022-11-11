@@ -8,9 +8,6 @@ const path = require("path");
 const filePath = path.join(__dirname, "electives.json");
 const fileData = fs.readFileSync(filePath).toString();
 
-const htmlPath = path.join(__dirname, "t.html");
-const htmlData = fs.readFileSync(htmlPath).toString();
-
 const prevData = JSON.parse(fileData);
 let datas = new Set(); //new Set(JSON.parse(fileData));
 let store = new Set();
@@ -19,17 +16,16 @@ const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 let browser = null;
 
 const years = [
-    // { name: "2015", selector: "#WDC8" },
-    // { name: "2016", selector: "#WDC9" },
-    // { name: "2017", selector: "#WDCA" },
-    // { name: "2018", selector: "#WDCB" },
-    // { name: "2019", selector: "#WDCC" },
-    // { name: "2020", selector: "#WDCD" },
+    { name: "2015", selector: "#WDC8" },
+    { name: "2016", selector: "#WDC9" },
+    { name: "2017", selector: "#WDCA" },
+    { name: "2018", selector: "#WDCB" },
+    { name: "2019", selector: "#WDCC" },
+    { name: "2020", selector: "#WDCD" },
     { name: "2021", selector: "#WDCE" },
-    //{ name: "2022", selector: "#WDCF" },
+    { name: "2022", selector: "#WDCF" },
 ];
 
-//const semester = ["#WDDF", "#WDE0", "#WDE1", "#WDE2"]; //1학기 , 여름, 2학기, 겨울
 const semester = [
     { name: "1학기", selector: "#WDDF" },
     { name: "여름학기", selector: "#WDE0" },
@@ -48,12 +44,9 @@ const univs = [
     { name: "차세대반도체학과", selector: "#WD0106" },
 ];
 
-const usaintLogin = async (req, res) => {
-    // const id = req.body.userId;
-    // const pw = req.body.password;
-
-    const id = "20201725";
-    const pw = "kimhyomin667~";
+const usaintLogin = async () => {
+    const id = "id";
+    const pw = "pw";
 
     try {
         const page = await browser.newPage();
@@ -78,7 +71,6 @@ const usaintLogin = async (req, res) => {
             console.log("Accepted..." + dialog.message());
             //SAP NetWeaver - 로그온 준비 중입니다.
             dialog.accept();
-            res.status(400).json({ message: dialog.message() });
             flag = true;
             page.close();
             return;
@@ -219,10 +211,6 @@ const electiveSelector = async (frame) => {
                 const html = await frame
                     .content()
                     .then((html) => {
-                        fs.writeFileSync(htmlPath, html);
-                        console.log(
-                            "---------------------save data------------"
-                        );
                         return html;
                     })
                     .catch(

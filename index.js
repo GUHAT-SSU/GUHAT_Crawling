@@ -9,7 +9,7 @@ const puppeteer = require("puppeteer");
 const bodyParser = require("body-parser");
 const { crawling } = require("./crawling");
 const { electiveCrawling } = require("./elective");
-const { test } = require("./readingTest");
+const { re_electiveCrawling } = require("./re_electives");
 
 const PORT = 5001;
 const app = express();
@@ -21,7 +21,8 @@ app.use(bodyParser.json());
 app.set("port", process.env.PORT || PORT);
 
 electiveCrawling();
-//crawling();
+re_electiveCrawling();
+crawling();
 //test();
 
 app.use((req, res, next) => {
