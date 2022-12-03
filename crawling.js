@@ -1,97 +1,27 @@
 const cheerio = require("cheerio");
-const axios = require("axios");
+const e = require("cors");
 const puppeteer = require("puppeteer");
-const fs = require("fs");
-const path = require("path");
-const filePath = path.join(__dirname, "lectures.json");
-const fileData = fs.readFileSync(filePath).toString();
-const prevData = JSON.parse(fileData);
-let datas = new Set(); //new Set(JSON.parse(fileData));
-let store = new Set();
-
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 let browser = null;
 
 const years = [
-    // { name: "2015", selector: "#WDC8" },
-    // { name: "2016", selector: "#WDC9" },
-    // { name: "2017", selector: "#WDCA" },
-    // { name: "2018", selector: "#WDCB" },
-    // { name: "2019", selector: "#WDCC" },
-    // { name: "2020", selector: "#WDCD" },
-    { name: "2021", selector: "#WDCE" },
-    // { name: "2022", selector: "#WDCF" },
+    { name: "2022", selector: "#WD67" },
+    //{ name: "2021", selector: "#WD66" },
+    //{ name: "2020", selector: "#WD66" },
+    // { name: "2019", selector: "#WD64" },
+    // { name: "2018", selector: "#WD63" },
 ];
 
-//const semester = ["#WDDF", "#WDE0", "#WDE1", "#WDE2"]; //1학기 , 여름, 2학기, 겨울
-const semester = [
-    // { name: "1학기", selector: "#WDDF" },
-    //{ name: "여름학기", selector: "#WDE0" },
-    // { name: "2학기", selector: "#WDE1" },
-    { name: "겨울학기", selector: "#WDE2" },
+const semesters = [
+    // { name: "1학기", selector: "#WD77" },
+    // { name: "여름학기", selector: "#WD78" },
+    { name: "2학기", selector: "#WD79" },
+    //{ name: "겨울학기", selector: "#WD7A" },
 ];
 
-const univs = [
-    { name: "사회과학대학", selector: "#WDFF" },
-    { name: "경제통상대학", selector: "#WD0100" },
-    { name: "경영대학", selector: "#WD0101" },
-    { name: "공과대학", selector: "#WD0102" },
-    { name: "IT대학", selector: "#WD0103" },
-    { name: "베어드교양대학", selector: "#WD0104" },
-    { name: "융합특성화자유전공학부", selector: "#WD0105" },
-    { name: "차세대반도체학과", selector: "#WD0106" },
-];
-const usaintLogin = async (req, res) => {
-    // const id = req.body.userId;
-    // const pw = req.body.password;
-
-    const id = "id";
-    const pw = "pw";
-
-    try {
-        const page = await browser.newPage();
-        await page.setDefaultNavigationTimeout(0);
-        //usaint 로그인 페이지
-        await page.goto(
-            "https://smartid.ssu.ac.kr/Symtra_sso/smln.asp?apiReturnUrl=https%3A%2F%2Fsaint.ssu.ac.kr%2FwebSSO%2Fsso.jsp",
-            { waitUntil: "load" }
-        );
-
-        await page.waitForSelector("#userid");
-        await page.focus("#userid");
-        await page.keyboard.type(id);
-        await page.waitForSelector("#pwd");
-        await page.focus("#pwd");
-        await page.keyboard.type(pw);
-        await page.click(".btn_login");
-        let flag = false;
-        page.on("dialog", (dialog) => {
-            console.log("Dialog is up...");
-            delay(1000);
-            console.log("Accepted..." + dialog.message());
-            //SAP NetWeaver - 로그온 준비 중입니다.
-            dialog.accept();
-            res.status(400).json({ message: dialog.message() });
-            flag = true;
-            page.close();
-            return;
-        });
-        await page.waitForNavigation({ timeout: 10000 });
-        page.close();
-        return true;
-    } catch (e) {
-        console.log(e);
-        return false;
-    }
-};
-
-const crawling = async () => {
-    for (let i = 0; i < prevData.length; i++) {
-        store.add(prevData[i]);
-    }
-
-    browser = await puppeteer.launch({
-        headless: false,
+const initBrowser = async () => {
+    return (browser = await puppeteer.launch({
+        headless: true,
         args: [
             "--disable-gpu",
             "--disable-dev-shm-usage",
@@ -104,29 +34,354 @@ const crawling = async () => {
             "--disable-site-isolation-trials",
             // '--single-process',
         ],
-    });
-    await usaintLogin();
+    }));
+};
+
+const killBrowser = async (browser) => {
+    try {
+        if (browser && browser.process() != null) {
+            console.log("start kill browser");
+            let pages = await browser.pages();
+            for (const page of pages) {
+                await page.close();
+            }
+            await browser.close();
+        }
+    } catch (e) {
+        console.log(e);
+    }
+};
+const usaintLogin = async (id, pw) => {
+    let browser = await initBrowser();
+    let msg = null;
     try {
         const page = await browser.newPage();
         await page.setDefaultNavigationTimeout(0);
-        await page.goto("https://saint.ssu.ac.kr/irj/portal", {
+
+        await page.setRequestInterception(true);
+
+        page.on("request", (req) => {
+            switch (req.resourceType()) {
+                case "stylesheet":
+                case "font":
+                case "image":
+                    req.abort();
+                    break;
+                default:
+                    req.continue();
+                    break;
+            }
+        });
+
+        //usaint 로그인 페이지
+        await page.goto(
+            "https://smartid.ssu.ac.kr/Symtra_sso/smln.asp?apiReturnUrl=https%3A%2F%2Fsaint.ssu.ac.kr%2FwebSSO%2Fsso.jsp",
+            { waitUntil: "load" }
+        );
+
+        let loginCheck = true;
+
+        page.once("dialog", (dialog) => {
+            loginCheck = false;
+            console.log("Dialog is up...");
+            msg = dialog.message();
+            console.log("Accepted..." + msg);
+            //SAP NetWeaver - 로그온 준비 중입니다.
+            dialog.accept();
+        });
+
+        await page.waitForSelector("#userid");
+        await page.focus("#userid");
+        await page.keyboard.type(id);
+        await page.waitForSelector("#pwd");
+        await page.focus("#pwd");
+        await page.keyboard.type(pw);
+        await page.waitForSelector(".btn_login");
+
+        let loginResult;
+        let scheduleResult;
+
+        // await Promise.all([
+        //     page.waitForNavigation(), // The promise resolves after navigation has finished
+        //     page.click(".btn_login"), // Clicking the link will indirectly cause a navigation
+        // ]);
+
+        await page.click(".btn_login");
+        await page.waitForTimeout(1000);
+        console.log(loginCheck);
+        if (!msg && loginCheck) {
+            loginResult = await getProfile(browser);
+        }
+
+        if (!loginCheck || (loginResult && !loginResult.ok)) {
+            killBrowser(browser);
+            return {
+                ok: false,
+                message: msg
+                    ? msg
+                    : loginResult
+                    ? loginResult.message
+                    : "cant not find error cause...",
+            };
+        } else {
+            killBrowser(browser);
+            return {
+                ok: true,
+                message: "usaint login success",
+                data: { ...loginResult.data },
+            };
+        }
+    } catch (e) {
+        console.log(e);
+        killBrowser(browser);
+        return { ok: false, message: msg ? msg : e.mesage };
+    }
+};
+
+const getProfile = async (browserArg) => {
+    let browser;
+    if (!browserArg) {
+        browser = await initBrowser();
+    } else {
+        browser = browserArg;
+        console.log("profile brower is alive");
+    }
+    try {
+        const entrancePage = await browser.newPage();
+        //  await page2.setDefaultNavigationTimeout(0);
+        await entrancePage.setRequestInterception(true);
+
+        entrancePage.on("request", (req) => {
+            switch (req.resourceType()) {
+                case "stylesheet":
+                case "font":
+
+                default:
+                    req.continue();
+                    break;
+            }
+        });
+
+        // /* 학적 정보 페이지 이동 */
+        await entrancePage.goto(
+            "https://ecc.ssu.ac.kr/sap/bc/webdynpro/SAP/ZCMW1001n?sap-language=KO#",
+            { waitUntil: "load" }
+        );
+
+        await entrancePage.waitForNavigation();
+        let errorPage = false;
+        entrancePage.frames().forEach((frame) => {
+            frame.title().then((t) => {
+                if (t.includes("로그온")) {
+                    console.log("로그온?" + t);
+                    errorPage = true;
+                }
+            });
+        });
+
+        if (errorPage)
+            return {
+                ok: false,
+                message: "Usaint 서버 오류, 재로그인 해주세요",
+            };
+
+        let pageRes = true;
+        await entrancePage
+            .waitForSelector("#WD8E", { timeout: 3000 })
+            .then(() => {
+                return true;
+            })
+            .catch((e) => {
+                console.log("페이지 오류" + e.message);
+                pageRes = false;
+            });
+        if (!pageRes) return { ok: false, message: "잘못된 페이지 접근" };
+
+        const entranceYear = await entrancePage.evaluate(
+            () => document.querySelector("#WD8E").value
+        );
+        await entrancePage.waitForSelector("#WD97");
+        const studentID = await entrancePage.evaluate(
+            () => document.querySelector("#WD97").value
+        );
+        await entrancePage.waitForSelector("#WDA0");
+        const name = await entrancePage.evaluate(() =>
+            document.querySelector("#WDA0").value.replace(" ", "")
+        );
+        await entrancePage.waitForSelector("#WDB8");
+        const grade = await entrancePage.evaluate(() =>
+            document.querySelector("#WDB8").value.replace(" ", "")
+        );
+        await entrancePage.waitForSelector("#WD92");
+        const univ = await entrancePage.evaluate(
+            () => document.querySelector("#WD92").value
+        ); //단과대
+        await entrancePage.waitForSelector("#WD9B");
+        const major = await entrancePage.evaluate(
+            () => document.querySelector("#WD9B").value
+        ); //학과
+        await entrancePage.waitForSelector("#WDAD");
+        const group = await entrancePage.evaluate(
+            () => document.querySelector("#WDAD").value
+        ); //분반
+        await entrancePage.waitForSelector("#WDBC");
+        const semester = await entrancePage.evaluate(() =>
+            document.querySelector("#WDBC").value.replace(" ", "")
+        ); //학기
+        await entrancePage.close();
+        // 정보
+        const entrance = {
+            name: name,
+            entranceYear: entranceYear,
+            studentId: studentID,
+            grade: grade,
+            univ: univ,
+            major: major,
+            group: group,
+            semester: semester,
+        };
+
+        return {
+            ok: true,
+            data: entrance,
+            message: "[Succes] usaint parsing ",
+        };
+    } catch (error) {
+        console.log(error);
+        killBrowser(browser);
+        return { ok: false, message: "[Fail] usaint parsing error" };
+    }
+};
+
+const loadSchedule = async (id, pw) => {
+    let browser = await initBrowser();
+    let msg = null;
+
+    try {
+        const page = await browser.newPage();
+        await page.setDefaultNavigationTimeout(0);
+
+        await page.setRequestInterception(true);
+
+        page.on("request", (req) => {
+            switch (req.resourceType()) {
+                case "stylesheet":
+                case "font":
+                case "image":
+                    req.abort();
+                    break;
+                default:
+                    req.continue();
+                    break;
+            }
+        });
+
+        //usaint 로그인 페이지
+        await page.goto(
+            "https://smartid.ssu.ac.kr/Symtra_sso/smln.asp?apiReturnUrl=https%3A%2F%2Fsaint.ssu.ac.kr%2FwebSSO%2Fsso.jsp",
+            { waitUntil: "load" }
+        );
+
+        let loginCheck = true;
+
+        page.once("dialog", (dialog) => {
+            loginCheck = false;
+            console.log("Dialog is up...");
+            msg = dialog.message();
+            console.log("Accepted..." + msg);
+            //SAP NetWeaver - 로그온 준비 중입니다.
+            dialog.accept();
+        });
+
+        await page.waitForSelector("#userid");
+        await page.focus("#userid");
+        await page.keyboard.type(id);
+        await page.waitForSelector("#pwd");
+        await page.focus("#pwd");
+        await page.keyboard.type(pw);
+        await page.waitForSelector(".btn_login");
+
+        await page.click(".btn_login");
+        await page.waitForTimeout(1000);
+        console.log(loginCheck);
+        let schedule;
+        if (loginCheck) {
+            schedule = await getSchedule(browser);
+        } else {
+            return {
+                ok: false,
+                message: msg ? msg : "fail to login usaint",
+            };
+        }
+        killBrowser(browser);
+        if (schedule && schedule.ok) {
+            return {
+                ok: true,
+                message: "[success] load schedule",
+                data: [...schedule.data],
+            };
+        } else {
+            return {
+                ok: false,
+                message: "[fail] load schedule",
+            };
+        }
+    } catch (error) {
+        killBrowser(browser);
+        console.log(error);
+        return {
+            ok: false,
+            message: e.message ? e.message : "[fail] load schedule",
+        };
+    }
+};
+
+const getSchedule = async (browserArg) => {
+    let browser;
+    if (!browserArg) {
+        browser = await initBrowser();
+    } else {
+        browser = browserArg;
+        console.log(" schedule brower is alive");
+    }
+    const schedulePage = await browser.newPage();
+    try {
+        await schedulePage.setRequestInterception(true);
+
+        schedulePage.on("request", (req) => {
+            switch (req.resourceType()) {
+                case "stylesheet":
+                case "font":
+                default:
+                    req.continue();
+                    break;
+            }
+        });
+
+        await schedulePage.setDefaultNavigationTimeout(0);
+        await schedulePage.goto("https://saint.ssu.ac.kr/irj/portal", {
             waitUntil: "load",
         });
-        await page.waitForTimeout(1000);
-        await page.waitForSelector(".mob_gnb_list");
-        await page.click(".mob_gnb_list");
+        await schedulePage.waitForTimeout(1000);
+        await schedulePage.waitForSelector(".mob_gnb_list");
+        await schedulePage.click(".mob_gnb_list");
 
-        await page.waitForSelector("#m_ddba4fb5fbc996006194d3c0c0aea5c4");
-        await page.click("#m_ddba4fb5fbc996006194d3c0c0aea5c4");
+        await schedulePage.waitForSelector(
+            "#m_ddba4fb5fbc996006194d3c0c0aea5c4"
+        );
+        await schedulePage.click("#m_ddba4fb5fbc996006194d3c0c0aea5c4");
 
-        await page.waitForSelector("#m_12cda160608ccd7b32af0ad5c6e5752c");
-        await page.click("#m_12cda160608ccd7b32af0ad5c6e5752c");
+        await schedulePage.waitForSelector(
+            "#m_12cda160608ccd7b32af0ad5c6e5752c"
+        );
+        await schedulePage.click("#m_12cda160608ccd7b32af0ad5c6e5752c");
 
-        await page.waitForSelector("#m_56883564eb5b429e9876b8176235a960"); //강의 시간표
-        await page.click("#m_56883564eb5b429e9876b8176235a960");
+        await schedulePage.waitForSelector(
+            "#m_1724938fdd5d98311a8647b31efd21fe"
+        );
+        await schedulePage.click("#m_1724938fdd5d98311a8647b31efd21fe");
 
-        const frame = page.frames().find((frame) => {
-            console.log(frame.name());
+        const frame = schedulePage.frames().find((frame) => {
             return frame.name() === "contentAreaFrame";
         });
 
@@ -141,7 +396,7 @@ const crawling = async () => {
                     .title()
                     .then((t) => {
                         console.log(`result :  ` + t);
-                        if (t.includes("강의시간표")) {
+                        if (t.includes("수업시간표조회")) {
                             innerFrame = innerFrames[i];
                             console.log("innerFrame find!!!!");
                             return t;
@@ -153,73 +408,65 @@ const crawling = async () => {
                     });
             }
             if (innerFrame !== null) {
-                await innerFrame.waitForTimeout(1000);
+                await innerFrame.waitForTimeout(2000);
                 try {
-                    await yearSelector(innerFrame);
-                    await page.close();
-                    await browser.close();
+                    const result = await selectSchedule(
+                        schedulePage,
+                        innerFrame
+                    );
+
+                    return {
+                        ok: true,
+                        data: result,
+                        message: "[Success] schedule parsing",
+                    };
                 } catch (e) {
                     console.log(e);
-                    fs.writeFileSync(filePath, JSON.stringify([...store]));
+                    //killBrowser(browser);
+                    return {
+                        ok: false,
+                        message: "[Fail] schedule parsing error",
+                    };
                 }
             }
         } else {
-            console.log(frame.name());
-            console.log("can not find iframe");
-            await page.close();
-            await browser.close();
-            return false;
+            await schedulePage.close();
+            return { ok: false, message: "[Fail] schedule parsing error" };
         }
     } catch (error) {
         console.log(error);
-        await page3.close();
-        await browser.close();
-        return false;
+        // killBrowser(browser);
+        await schedulePage.close();
+        return { ok: false, message: "[Fail] schedule parsing error" };
     }
 };
 
-//년도->학기 -> 단과대 -> 학과 parsing -> 과목 parsing
-const yearSelector = async (innerFrame) => {
-    for (let i = 0; i < years.length; i++) {
-        // await selectSchedule(page, innerFrame);
-        const yearDown = await innerFrame.waitForSelector("#WD89-btn");
-        await yearDown.click();
-        await innerFrame.waitForTimeout(700);
+const selectSchedule = async (page, frame) => {
+    const schedules = [];
 
-        const yearBtn = await innerFrame.waitForSelector(years[i].selector);
-        await yearBtn.click();
-        await innerFrame.waitForTimeout(700);
+    try {
+        for (let y = 0; y < years.length; y++) {
+            const yearDown = await frame.waitForSelector(`#WD21-btn`);
+            await yearDown.click();
+            // await page.waitForTimeout(200);
 
-        for (let s = 0; s < semester.length; s++) {
-            const semesterDown = await innerFrame.waitForSelector("#WDDD-btn");
-            await semesterDown.click();
-            await innerFrame.waitForTimeout(700);
+            const yearBtn = await frame.waitForSelector(years[y].selector);
+            await yearBtn.click();
+            //await page.waitForTimeout(200);
 
-            const semesterBtn = await innerFrame.waitForSelector(
-                semester[s].selector
-            );
-            await semesterBtn.click();
-            await innerFrame.waitForTimeout(700);
+            for (let s = 0; s < semesters.length; s++) {
+                const semesterDown = await frame.waitForSelector("#WD75-btn");
+                await semesterDown.click();
 
-            //major parsing
+                await page.waitForTimeout(200);
 
-            for (let u = 0; u < univs.length; u++) {
-                const univDown = await innerFrame.waitForSelector("#WDFA-btn");
-                await univDown.click();
-                await innerFrame.waitForTimeout(700);
-
-                const univBtn = await innerFrame.waitForSelector(
-                    univs[u].selector
+                const semesterBtn = await frame.waitForSelector(
+                    semesters[s].selector
                 );
-                await univBtn.click();
-                await innerFrame.waitForTimeout(500);
+                await semesterBtn.click();
+                await page.waitForTimeout(700);
 
-                const majorDown = await innerFrame.waitForSelector(
-                    "#WD0108-btn"
-                );
-                await majorDown.click();
-
-                const html = await innerFrame
+                const html = await frame
                     .content()
                     .then((html) => {
                         return html;
@@ -234,268 +481,105 @@ const yearSelector = async (innerFrame) => {
                             );
                         }
                     );
-                const majors = await majorSelector(html);
+                let schedule = {
+                    year: "",
+                    semester: "",
+                    data: [],
+                };
 
-                await innerFrame.waitForTimeout(500);
-                await majorDown.click();
+                const result = await scheduleParser(html);
 
-                for (let m = 0; m < majors.length; m++) {
-                    const majorDown = await innerFrame.waitForSelector(
-                        "#WD0108-btn"
-                    );
-                    await majorDown.click();
-                    await innerFrame.waitForTimeout(700);
+                schedule.year = years[y].name;
+                schedule.semester = semesters[s].name;
+                schedule.data = result.isEmpty ? [] : result.schedule;
 
-                    const majorBtn = await innerFrame.waitForSelector(
-                        majors[m].selector
-                    );
-                    await majorBtn.click();
-                    await innerFrame.waitForTimeout(500);
-
-                    const groupDown = await innerFrame.waitForSelector(
-                        "#WD010B-btn"
-                    );
-                    await groupDown.click();
-                    await innerFrame.waitForTimeout(1000);
-
-                    const groupHtml = await innerFrame
-                        .content()
-                        .then((html) => {
-                            return html;
-                        })
-                        .catch(
-                            // 거부 이유 기록
-                            function (reason) {
-                                console.log(
-                                    "여기서 거부된 프로미스(" +
-                                        reason +
-                                        ")를 처리하세요."
-                                );
-                            }
-                        );
-
-                    const groups = await detailSelector(groupHtml);
-                    await groupDown.click();
-
-                    for (let g = 0; g < groups.length; g++) {
-                        await innerFrame.waitForTimeout(500);
-                        const groupDown = await innerFrame.waitForSelector(
-                            "#WD010B-btn"
-                        );
-                        await groupDown.click();
-
-                        await innerFrame.waitForTimeout(200);
-                        const groupBtn = await innerFrame.waitForSelector(
-                            groups[g].selector
-                        );
-                        await groupBtn.click();
-                        await innerFrame.waitForTimeout(500);
-
-                        const search = await innerFrame.waitForSelector(
-                            "#WD010E"
-                        );
-                        await search.click();
-                        await innerFrame.waitForTimeout(5000);
-
-                        const result = await innerFrame
-                            .content()
-                            .then((html) => {
-                                // console.log(html);
-                                return html;
-                            })
-                            .catch(
-                                // 거부 이유 기록
-                                function (reason) {
-                                    console.log(
-                                        "여기서 거부된 프로미스(" +
-                                            reason +
-                                            ")를 처리하세요."
-                                    );
-                                }
-                            );
-                        await classSelector(
-                            result,
-                            years[i].name,
-                            semester[s].name,
-                            univs[u].name,
-                            majors[m].name,
-                            groups[g].name
-                        );
-                    }
-                }
-                datas.forEach((e) => {
-                    store.add(e);
-                });
-                datas.clear();
-                fs.writeFileSync(filePath, JSON.stringify([...store]));
+                schedules.push(schedule);
             }
         }
+        return schedules;
+    } catch (e) {
+        console.log(e);
     }
 };
 
-const detailSelector = async (html) => {
+// id="WD60" => 2015
+// id="WD61" => 2016
+// id="WD62" => 2017
+// id="WD63" => 2018
+// id="WD64" => 2019
+// id="WD65" => 2020
+// id="WD66" => 2021
+// id="WD67" => 2022
+// id="WD77" => 1학기
+// id="WD78" => 여름학기
+// id="WD79" => 2학기
+// id="WD7A" => 겨울학기
+
+const scheduleParser = async (html) => {
     const $ = cheerio.load(html);
-    const table = $("#WD010C-aria");
-    let details = [];
-    table.children("span").each((index, el) => {
-        const m = {
-            name: $(el).text(),
-            selector: "#" + $(el).attr("id").split("-")[0],
-        };
-        details.push(m);
-    });
-    return details;
-};
+    const table = $("#WD8C-contentTBody");
 
-const majorSelector = async (html) => {
-    const $ = cheerio.load(html);
-    const table = $("#WD0109-aria");
+    var schedule = Array.from(Array(10), () => Array(6).fill(null));
+    let isEmpty = true;
 
-    let majors = [];
-
-    table.children("span").each((index, el) => {
-        const m = {
-            name: $(el).text(),
-            selector: "#" + $(el).attr("id").split("-")[0],
-        };
-        majors.push(m);
-    });
-    return majors;
-};
-
-const classSelector = async (html, year, semester, univ, major, detail) => {
-    const $ = cheerio.load(html);
-    const td = $("#WD0181-contentTBody");
-
-    let classes = [];
-
-    td.children("tr").each((index, el) => {
-        const classItem = {
-            id: "",
-            year: "",
-            semester: "",
-            univ: "",
-            major: "",
-            major_detail: "",
-            name: "",
-            group: "",
-            professor: "",
-            schedule: "",
-            target: "", //수강대상
-        };
-        const input = [];
-        {
-            $(el)
-                .children("td")
-                .each((i, tr) => {
-                    if (i === 5) {
-                        const id = $(tr)
-                            .children("a")
+    $("#WD8C-contentTBody")
+        .children("tr")
+        .each((index, el) => {
+            if (index < 11) {
+                const tds = $(el).children("td");
+                tds.each((idx, td) => {
+                    if (idx !== 0 && !$(td).text().includes("비어 있음")) {
+                        isEmpty = false;
+                        let item = $(td)
+                            .children("span")
                             .children("span:nth-child(2)")
-                            .text();
-                        input.push(id);
-                    } else if (i === 6) {
-                        const name = $(tr)
-                            .children("span")
-                            .children("span:nth-child(1)")
-                            .text();
-                        input.push(name);
-                    } else if (i === 8) {
-                        const professor = $(tr)
-                            .children("span")
-                            .children("span")
-                            .text();
-                        if (professor.includes("\n")) {
-                            let professors = [
-                                ...new Set(
-                                    professor
-                                        .split("\n")
-                                        .slice(1, professor.length - 1)
-                                ),
-                            ];
-                            input.push(professors);
-                        } else if (!professor.includes("비어 있음")) {
-                            const p = professor.slice(0, professor.length / 2);
-                            input.push([p]);
+                            .text()
+                            .split("\n");
+
+                        let lecture = {
+                            name: "",
+                            professor: "",
+                            time: "",
+                            place: "",
+                        };
+                        if (item.length > 3) {
+                            lecture.name = item[0];
+                            lecture.professor = item[1];
+                            lecture.time = item[2];
+                            lecture.place = item[3];
+
+                            schedule[index - 1][idx - 1] = lecture;
                         } else {
-                            input.push("");
+                            schedule[index - 1][idx - 1] = $(td)
+                                .text()
+                                .includes("비어 있음")
+                                ? null
+                                : $(td).text();
                         }
-                    } else if (i == 13) {
-                        const times = [];
-
-                        let lectures = [];
-                        let time = $(tr)
-                            .children("span")
-                            .children("span:nth-child(1)")
-                            .text();
-                        while (time.indexOf(")") !== -1) {
-                            const seperator = time.indexOf(")");
-                            const detailChecker = time.indexOf("(", seperator);
-                            if (seperator === time.length - 1) {
-                                //수업이 하나인 경우
-                                times.push(time);
-                                break;
-                            } else {
-                                if (detailChecker !== -1) {
-                                    //수업이 더 있음
-                                    times.push(time.slice(0, seperator + 1));
-                                    time = time.substring(seperator + 1);
-                                } else {
-                                    console.log(time);
-                                    times.push(time);
-                                    break;
-                                }
-                            }
-                        }
-                        times.map((item, idx) => {
-                            const lecture = {
-                                day: "",
-                                time: "",
-                                place: "",
-                            };
-                            const info = item
-                                .slice(0, item.indexOf("("))
-                                .split(" ");
-
-                            lecture.place = item.substring(item.indexOf("(")); // 마지막 요소
-                            lecture.time = info[info.length - 2];
-                            lecture.day = info.slice(0, info.length - 2);
-                            lectures.push(lecture);
-                        });
-
-                        input.push(lectures);
-                    } else if (i == 14) {
-                        //수강 대상
-                        const target = $(tr)
-                            .children("span")
-                            .children("span:nth-child(1)")
-                            .text();
-                        input.push(target.split([";", ","]));
-                    } else input.push($(tr).text());
+                    } else if (idx !== 0)
+                        schedule[index - 1][idx - 1] = $(td)
+                            .text()
+                            .includes("비어 있음")
+                            ? null
+                            : $(td).text();
                 });
-        }
+            }
+        });
 
-        if (input[5] !== undefined) {
-            classItem.year = year;
-            classItem.semester = semester;
-            classItem.univ = univ;
-            classItem.major = major;
-            classItem.major_detail = detail;
-            classItem.id = input[5];
-            classItem.name = input[6];
-            classItem.group = input[7].includes("비어 있음") ? "" : input[7];
+    const result = [];
 
-            classItem.professor = input[8];
-            classItem.schedule = input[13].includes("비어 있음")
-                ? ""
-                : input[13];
-            classItem.target = input[14].includes("비어 있음") ? "" : input[14];
-            classes.push(classItem);
-        }
-    });
-    datas.add(classes);
-
-    return classes;
+    for (let i = 0; i < schedule[0].length; i++) {
+        const tmp = [];
+        schedule.forEach((row, idx) => tmp.push(row[i]));
+        result.push(tmp);
+    }
+    return { schedule: result, isEmpty: isEmpty };
 };
 
-module.exports = { crawling, usaintLogin, classSelector };
+module.exports = {
+    usaintLogin,
+    getProfile,
+    getSchedule,
+    selectSchedule,
+    loadSchedule,
+};
